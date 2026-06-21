@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkers</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --board-dark:  #3b1f0e;
+      --board-light: #c8a97a;
+      --red-piece:   #c0392b;
+      --red-hi:      #e74c3c;
+      --red-shadow:  #7b241c;
+      --blk-piece:   #f0e8d8;
+      --blk-hi:      #ffffff;
+      --blk-shadow:  #b0a08a;
+      --gold:        #c8922a;
+      --gold-light:  #f0b93a;
+      --bg:          #0f0805;
+      --text:        #e8d9c0;
+      --text-dim:    #8a7060;
+      --valid-glow:  rgba(240,185,58,0.45);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 40px;
+    }
+
+    header { text-align: center; margin-bottom: 28px; }
+    header h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      color: var(--gold-light);
+      text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    }
+    header p { font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
+
+    /* ── Connection overlay ── */
+    #overlay {
+      position: fixed; inset: 0;
+      background: rgba(10,4,1,0.92);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; z-index: 100;
+    }
+    #overlay.hidden { display: none; }
+    #overlay-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.6rem; color: var(--gold-light);
+    }
+    #overlay-msg { font-size: 0.9rem; color: var(--text-dim); text-align: center; max-width: 320px; line-height: 1.6; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #3a2010;
+      border-top-color: var(--gold-light);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Role badge ── */
+    #role-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: #180d06; border: 1px solid #3a2010;
+      border-radius: 20px; padding: 5px 14px 5px 8px;
+      font-size: 0.78rem; font-weight: 600; color: var(--text);
+      margin-bottom: 8px;
+    }
+    #role-pip { width: 16px; height: 16px; border-radius: 50%; }
+    #role-pip.red { background: radial-gradient(circle at 35% 35%, var(--red-hi), var(--red-piece) 60%, var(--red-shadow)); }
+    #role-pip.blk { background: radial-gradient(circle at 35% 35%, var(--blk-hi), var(--blk-piece) 60%, var(--blk-shadow)); }
+    #role-pip.spectator { background: #4a3020; }
+
+    .game-wrap {
+      display: flex; gap: 28px;
+      align-items: flex-start; flex-wrap: wrap; justify-content: center;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar { display: flex; flex-direction: column; gap: 16px; width: 180px; flex-shrink: 0; }
+    .panel { background: #180d06; border: 1px solid #3a2010; border-radius: 8px; padding: 16px; }
+    .panel-label { font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
+
+    .player-card {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 6px;
+      border: 1px solid transparent;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .player-card.active { border-color: var(--gold); background: rgba(200,146,42,0.08); }
+    .player-pip { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
+    .player-pip.red { background: radial-gradient(circle at 35% 35%, var(--red-hi), var(--red-piece) 60%, var(--red-shadow)); }
+    .player-pip.blk { background: radial-gradient(circle at 35% 35%, var(--blk-hi), var(--blk-piece) 60%, var(--blk-shadow)); }
+    .player-info { flex: 1; }
+    .player-name { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+    .player-count { font-size: 0.72rem; color: var(--text-dim); margin-top: 1px; }
+    .player-conn { font-size: 0.68rem; margin-top: 2px; }
+    .player-conn.online { color: #5cb85c; }
+    .player-conn.offline { color: #c0392b; }
+    .turn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold-light); opacity: 0; transition: opacity 0.2s; }
+    .player-card.active .turn-dot { opacity: 1; }
+
+    .status-box {
+      text-align: center; padding: 12px; font-size: 0.85rem; font-weight: 500;
+      color: var(--text); min-height: 48px;
+      display: flex; align-items: center; justify-content: center; line-height: 1.4;
+    }
+    .status-box.winner { color: var(--gold-light); font-family: 'Playfair Display', serif; font-size: 1rem; }
+    .status-box.not-your-turn { color: var(--text-dim); }
+
+    .btn {
+      width: 100%; padding: 10px 0; border: none; border-radius: 6px;
+      background: linear-gradient(135deg, #8b5e2a, #5c3a14);
+      color: var(--gold-light); font-family: 'Inter', sans-serif;
+      font-size: 0.82rem; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; cursor: pointer;
+      transition: filter 0.15s, transform 0.1s;
+    }
+    .btn:hover { filter: brightness(1.2); }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+
+    .legend { display: flex; flex-direction: column; gap: 8px; }
+    .legend-row { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--text-dim); }
+    .legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+
+    /* ── Board ── */
+    .board-outer {
+      padding: 14px;
+      background: linear-gradient(145deg, #3b2010, #1a0a02, #3b2010);
+      border-radius: 6px;
+      box-shadow: 0 0 0 3px #0a0401, 0 8px 40px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,200,100,0.1);
+    }
+    .board-label-row { display: flex; padding: 0 0 4px 0; }
+    .board-label-row .corner { width: 20px; }
+    .board-labels { display: flex; flex: 1; }
+    .board-labels span { flex: 1; text-align: center; font-size: 0.62rem; color: #6a4828; letter-spacing: 0.05em; }
+    .board-with-rank { display: flex; gap: 4px; }
+    .rank-labels { display: flex; flex-direction: column; justify-content: space-around; width: 16px; }
+    .rank-labels span { font-size: 0.62rem; color: #6a4828; text-align: right; }
+
+    #board {
+      display: grid; grid-template-columns: repeat(8, 1fr);
+      width: min(520px, calc(100vw - 80px)); aspect-ratio: 1;
+      border: 2px solid #0a0401;
+    }
+    /* Flip board for black player so their pieces are at the bottom */
+    #board.flipped { transform: rotate(180deg); }
+    #board.flipped .cell { transform: rotate(180deg); }
+
+    .cell {
+      aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+      cursor: default; position: relative; transition: background 0.15s;
+    }
+    .cell.light { background: var(--board-light); }
+    .cell.dark  { background: var(--board-dark); }
+    .cell.valid-move { background: #4a2a14; cursor: pointer; }
+    .cell.valid-move::after {
+      content: ''; width: 32%; height: 32%; border-radius: 50%;
+      background: var(--valid-glow); border: 2px solid rgba(240,185,58,0.6);
+      pointer-events: none;
+    }
+
+    .piece {
+      width: 74%; height: 74%; border-radius: 50%; cursor: pointer;
+      position: relative; transition: transform 0.12s, box-shadow 0.12s;
+      user-select: none;
+    }
+    .piece:hover { transform: scale(1.07); }
+    .piece.red {
+      background: radial-gradient(circle at 36% 32%, var(--red-hi) 0%, var(--red-piece) 55%, var(--red-shadow) 100%);
+      box-shadow: 0 4px 0 0 var(--red-shadow), 0 6px 12px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,200,180,0.25);
+    }
+    .piece.blk {
+      background: radial-gradient(circle at 36% 32%, var(--blk-hi) 0%, var(--blk-piece) 55%, var(--blk-shadow) 100%);
+      box-shadow: 0 4px 0 0 var(--blk-shadow), 0 6px 12px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.4);
+    }
+    .piece.selected {
+      transform: scale(1.12) translateY(-3px);
+      box-shadow: 0 8px 0 0 var(--red-shadow), 0 10px 20px rgba(0,0,0,0.6), 0 0 0 3px var(--gold-light), inset 0 1px 2px rgba(255,200,180,0.25);
+      z-index: 10;
+    }
+    .piece.blk.selected {
+      box-shadow: 0 8px 0 0 var(--blk-shadow), 0 10px 20px rgba(0,0,0,0.6), 0 0 0 3px var(--gold-light), inset 0 1px 2px rgba(255,255,255,0.4);
+    }
+    .piece.king::before {
+      content: '♛'; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(12px, 2.2vw, 20px);
+      color: rgba(255,215,0,0.9); text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+      pointer-events: none;
+    }
+    .piece.blk.king::before { color: rgba(100,60,0,0.85); }
+
+    .captured-tray { display: flex; flex-wrap: wrap; gap: 4px; min-height: 28px; }
+    .cap-pip { width: 18px; height: 18px; border-radius: 50%; }
+    .cap-pip.red { background: radial-gradient(circle at 35% 35%, var(--red-hi), var(--red-piece) 60%, var(--red-shadow)); }
+    .cap-pip.blk { background: radial-gradient(circle at 35% 35%, var(--blk-hi), var(--blk-piece) 60%, var(--blk-shadow)); }
+
+    @media (max-width: 680px) {
+      .game-wrap { flex-direction: column; align-items: center; }
+      .sidebar { flex-direction: row; width: auto; flex-wrap: wrap; justify-content: center; }
+      .sidebar .panel { min-width: 140px; flex: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Connection / waiting overlay -->
+<div id="overlay">
+  <div id="overlay-title">Checkers</div>
+  <div class="spinner" id="spinner"></div>
+  <div id="overlay-msg">Connecting to server…</div>
+</div>
+
+<header>
+  <h1>CHECKERS</h1>
+  <div id="role-badge" style="display:none">
+    <div id="role-pip"></div>
+    <span id="role-label"></span>
+  </div>
+  <p>Classic American Rules · Two-Player</p>
+</header>
+
+<div class="game-wrap">
+  <div class="sidebar">
+    <div class="panel">
+      <div class="panel-label">Players</div>
+      <div class="player-card" id="card-red">
+        <div class="player-pip red"></div>
+        <div class="player-info">
+          <div class="player-name">Red</div>
+          <div class="player-count" id="count-red">12 pieces</div>
+          <div class="player-conn" id="conn-red">—</div>
+        </div>
+        <div class="turn-dot"></div>
+      </div>
+      <div style="height:8px"></div>
+      <div class="player-card" id="card-blk">
+        <div class="player-pip blk"></div>
+        <div class="player-info">
+          <div class="player-name">Black</div>
+          <div class="player-count" id="count-blk">12 pieces</div>
+          <div class="player-conn" id="conn-blk">—</div>
+        </div>
+        <div class="turn-dot"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label">Status</div>
+      <div class="status-box" id="status">Connecting…</div>
+    </div>
+
+    <div class="panel">
+      <button class="btn" id="btn-new" disabled>New Game</button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label">Captured</div>
+      <div class="captured-tray" id="cap-red"></div>
+      <div style="height:6px"></div>
+      <div class="captured-tray" id="cap-blk"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label">Legend</div>
+      <div class="legend">
+        <div class="legend-row">
+          <div class="legend-swatch" style="background:rgba(240,185,58,0.5);border:1px solid gold;border-radius:50%"></div>
+          Selected
+        </div>
+        <div class="legend-row">
+          <div class="legend-swatch" style="background:rgba(240,185,58,0.3);border:1px dashed gold"></div>
+          Valid move
+        </div>
+        <div class="legend-row" style="font-size:0.78rem;color:#8a7060">♛ = King</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Board -->
+  <div>
+    <div class="board-label-row">
+      <div class="corner"></div>
+      <div class="board-labels" id="file-labels"></div>
+    </div>
+    <div class="board-with-rank">
+      <div class="rank-labels" id="rank-labels"></div>
+      <div class="board-outer">
+        <div id="board"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Client constants ───────────────────────────────────────────────────────
+const RED = 'red', BLK = 'blk';
+const FILES = 'ABCDEFGH';
+
+// ── Client state ───────────────────────────────────────────────────────────
+let myColor   = null;   // 'red' | 'blk' | null (spectator)
+let waiting   = true;   // waiting for opponent
+let gameState = null;   // latest state from server
+let selected  = null;   // {r,c} locally selected piece
+let validMoves= [];     // computed locally for UX hints
+let ws        = null;
+let connectedPlayers = { red: false, blk: false };
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+
+  ws.addEventListener('open', () => {
+    setOverlay('Waiting for opponent…', true);
+  });
+
+  ws.addEventListener('message', e => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  });
+
+  ws.addEventListener('close', () => {
+    setOverlay('Disconnected. Reconnecting…', true);
+    setTimeout(connect, 2000);
+  });
+
+  ws.addEventListener('error', () => ws.close());
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+// ── Message handling ───────────────────────────────────────────────────────
+function handleMessage(msg) {
+  if (msg.type === 'welcome') {
+    myColor = msg.color;
+    waiting = msg.waiting;
+    connectedPlayers[myColor] = true;
+
+    // Show role badge
+    const badge = document.getElementById('role-badge');
+    const pip   = document.getElementById('role-pip');
+    const lbl   = document.getElementById('role-label');
+    badge.style.display = 'inline-flex';
+    pip.className = `red blk`.includes(myColor) ? myColor : 'spectator';
+    lbl.textContent = `You are playing as ${myColor === RED ? 'Red' : 'Black'}`;
+
+    // Flip board for black so your pieces are always at the bottom
+    document.getElementById('board').classList.toggle('flipped', myColor === BLK);
+
+    if (waiting) {
+      setOverlay('Waiting for opponent to join…', true);
+    } else {
+      hideOverlay();
+      connectedPlayers[myColor === RED ? BLK : RED] = true;
+    }
+    updateConnBadges();
+    document.getElementById('btn-new').disabled = false;
+  }
+
+  if (msg.type === 'spectator') {
+    myColor = null;
+    document.getElementById('role-badge').style.display = 'inline-flex';
+    document.getElementById('role-pip').className = 'spectator';
+    document.getElementById('role-label').textContent = 'Spectating';
+    hideOverlay();
+  }
+
+  if (msg.type === 'state') {
+    // If we got a state update and were waiting, opponent has arrived
+    if (waiting && myColor) {
+      waiting = false;
+      connectedPlayers[myColor === RED ? BLK : RED] = true;
+      updateConnBadges();
+      hideOverlay();
+    }
+    gameState = msg.state;
+    selected = null; validMoves = [];
+    renderAll();
+  }
+
+  if (msg.type === 'opponent_disconnected') {
+    const opp = myColor === RED ? BLK : RED;
+    connectedPlayers[opp] = false;
+    updateConnBadges();
+    setOverlay('Opponent disconnected.\nWaiting for them to rejoin…', true);
+  }
+
+  if (msg.type === 'rejected') {
+    // Shake the selected piece briefly
+    selected = null; validMoves = [];
+    if (gameState) renderAll();
+  }
+}
+
+// ── Local move computation (for UX hints only — server validates) ──────────
+function getJumps(r, c, pc, board) {
+  const dirs = pc.king ? [[-1,-1],[-1,1],[1,-1],[1,1]]
+               : pc.color===RED ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]];
+  const jumps = [];
+  for (const [dr,dc] of dirs) {
+    const mr=r+dr, mc=c+dc, lr=r+2*dr, lc=c+2*dc;
+    if (lr<0||lr>7||lc<0||lc>7) continue;
+    const mid = board[mr][mc];
+    if (mid && mid.color!==pc.color && !board[lr][lc])
+      jumps.push({r:lr,c:lc,captures:[{r:mr,c:mc}]});
+  }
+  return jumps;
+}
+function getSimpleMoves(r,c,pc,board) {
+  const dirs = pc.king ? [[-1,-1],[-1,1],[1,-1],[1,1]]
+               : pc.color===RED ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]];
+  return dirs.map(([dr,dc])=>({r:r+dr,c:c+dc,captures:[]}))
+    .filter(m=>m.r>=0&&m.r<8&&m.c>=0&&m.c<8&&!board[m.r][m.c]);
+}
+function allJumpsForColor(color, board) {
+  const j=[];
+  for (let r=0;r<8;r++) for (let c=0;c<8;c++) {
+    const pc=board[r][c];
+    if (pc&&pc.color===color) getJumps(r,c,pc,board).forEach(x=>j.push(x));
+  }
+  return j;
+}
+function localMovesFor(r,c) {
+  if (!gameState) return [];
+  const {board, turn, mustJump, chainPiece} = gameState;
+  const pc = board[r][c];
+  if (!pc || pc.color !== myColor || turn !== myColor) return [];
+  if (chainPiece && (chainPiece.r!==r||chainPiece.c!==c)) return [];
+  const jumps = getJumps(r,c,pc,board);
+  if (mustJump) return jumps;
+  if (allJumpsForColor(myColor, board).length>0) return jumps;
+  return getSimpleMoves(r,c,pc,board);
+}
+
+// ── Click handling ─────────────────────────────────────────────────────────
+function handleCellClick(r, c) {
+  if (!gameState || gameState.gameOver || myColor === null) return;
+  if (gameState.turn !== myColor) return;   // not my turn
+
+  // Clicking a valid-move target → send move
+  const vm = validMoves.find(m=>m.r===r&&m.c===c);
+  if (vm && selected) {
+    send({type:'move', sr:selected.r, sc:selected.c, tr:r, tc:c});
+    selected = null; validMoves = [];
+    return;
+  }
+
+  // Clicking one of my own pieces → select it
+  const pc = gameState.board[r][c];
+  if (pc && pc.color === myColor) {
+    selected = {r,c};
+    validMoves = localMovesFor(r,c);
+    renderBoard();
+    return;
+  }
+
+  // Clicking elsewhere → deselect
+  selected = null; validMoves = [];
+  renderBoard();
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function renderBoard() {
+  if (!gameState) return;
+  const {board, turn, chainPiece} = gameState;
+  const el = document.getElementById('board');
+  el.innerHTML = '';
+  const validSet = new Set(validMoves.map(m=>`${m.r},${m.c}`));
+
+  for (let r=0;r<8;r++) for (let c=0;c<8;c++) {
+    const cell = document.createElement('div');
+    const isDark = (r+c)%2===1;
+    cell.className = 'cell '+(isDark?'dark':'light');
+    if (isDark && validSet.has(`${r},${c}`)) cell.classList.add('valid-move');
+    cell.addEventListener('click', ()=>handleCellClick(r,c));
+
+    const pc = board[r][c];
+    if (pc) {
+      const div = document.createElement('div');
+      const isSel = selected && selected.r===r && selected.c===c;
+      div.className = `piece ${pc.color}${pc.king?' king':''}${isSel?' selected':''}`;
+      div.addEventListener('click', e=>{ e.stopPropagation(); handleCellClick(r,c); });
+      cell.appendChild(div);
+    }
+    el.appendChild(cell);
+  }
+}
+
+function renderAll() {
+  if (!gameState) return;
+  const {board, turn, captured, gameOver, winner, mustJump} = gameState;
+
+  renderBoard();
+
+  // Piece counts
+  const rc = board.flat().filter(p=>p&&p.color===RED).length;
+  const bc = board.flat().filter(p=>p&&p.color===BLK).length;
+  document.getElementById('count-red').textContent=`${rc} piece${rc!==1?'s':''}`;
+  document.getElementById('count-blk').textContent=`${bc} piece${bc!==1?'s':''}`;
+
+  // Turn cards
+  document.getElementById('card-red').className='player-card'+(turn===RED?' active':'');
+  document.getElementById('card-blk').className='player-card'+(turn===BLK?' active':'');
+
+  // Status
+  const statusEl = document.getElementById('status');
+  if (gameOver) {
+    const wName = winner===RED?'Red':'Black';
+    statusEl.textContent = `${wName} wins! 🎉`;
+    statusEl.className = 'status-box winner';
+  } else {
+    const isMyTurn = turn === myColor;
+    const tName = turn===RED?'Red':'Black';
+    const jumpNote = mustJump ? ' — must jump!' : '';
+    if (myColor === null) {
+      statusEl.textContent = `${tName}'s turn${jumpNote}`;
+      statusEl.className = 'status-box';
+    } else if (isMyTurn) {
+      statusEl.textContent = `Your turn${jumpNote}`;
+      statusEl.className = 'status-box';
+    } else {
+      statusEl.textContent = `${tName}'s turn — please wait`;
+      statusEl.className = 'status-box not-your-turn';
+    }
+  }
+
+  // Captured trays
+  const capRed = document.getElementById('cap-red');
+  const capBlk = document.getElementById('cap-blk');
+  capRed.innerHTML=''; capBlk.innerHTML='';
+  for (let i=0;i<captured.red;i++) { const p=document.createElement('div'); p.className='cap-pip red'; capRed.appendChild(p); }
+  for (let i=0;i<captured.blk;i++) { const p=document.createElement('div'); p.className='cap-pip blk'; capBlk.appendChild(p); }
+}
+
+function updateConnBadges() {
+  const setConn = (id, online) => {
+    const el = document.getElementById(id);
+    el.textContent = online ? '● Online' : '○ Waiting…';
+    el.className = 'player-conn '+(online?'online':'offline');
+  };
+  setConn('conn-red', connectedPlayers.red);
+  setConn('conn-blk', connectedPlayers.blk);
+}
+
+// ── Overlay helpers ────────────────────────────────────────────────────────
+function setOverlay(msg, showSpinner=false) {
+  document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('overlay-msg').textContent = msg;
+  document.getElementById('spinner').style.display = showSpinner ? 'block' : 'none';
+}
+function hideOverlay() {
+  document.getElementById('overlay').classList.add('hidden');
+}
+
+// ── Board labels ───────────────────────────────────────────────────────────
+function buildLabels() {
+  const files = document.getElementById('file-labels');
+  const ranks = document.getElementById('rank-labels');
+  files.innerHTML=''; ranks.innerHTML='';
+  for (let i=0;i<8;i++) { const s=document.createElement('span'); s.textContent=FILES[i]; files.appendChild(s); }
+  for (let i=1;i<=8;i++) { const s=document.createElement('span'); s.textContent=9-i; ranks.appendChild(s); }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-new').addEventListener('click', () => send({type:'new_game'}));
+buildLabels();
+connect();
+</script>
+</body>
+</html>
